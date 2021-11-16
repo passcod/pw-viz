@@ -5,7 +5,7 @@ use egui_nodes::{LinkArgs, NodeArgs, NodeConstructor, PinArgs};
 
 use crate::pipewire_impl::MediaType;
 
-use super::{link::Link, node::Node, Theme};
+use super::{Theme, link::Link, node::Node, port::Port};
 
 ///Represents changes to any links that might happend in the ui
 ///These changes are used to send updates to the pipewire thread
@@ -22,7 +22,10 @@ pub enum LinkUpdate {
 }
 pub struct Graph {
     nodes_ctx: egui_nodes::Context,
-    nodes: HashMap<u32, Node>, //Node id to Node
+    /*
+    pw id to 
+    */
+    nodes: HashMap<String, Node>, //Node id to Node
     links: HashMap<u32, Link>, //Link id to Link
 }
 
@@ -37,27 +40,34 @@ impl Graph {
             links: HashMap::new(),
         }
     }
-    pub fn add_node(&mut self, node: Node) {
-        log::debug!("New node: {}", node.name());
+    fn get_or_create_node(&mut self, name: String) -> &mut Node {
+        self.nodes.entry(name)
+        .or_insert_with(|| {
+            log::debug!("Created new ui node: {}", name);
 
-        self.nodes.insert(node.id(), node);
+            Node::new(name)
+        })
     }
-    pub fn remove_node(&mut self, id: u32) -> Option<Node> {
-        let removed = self.nodes.remove(&id);
+    pub fn add_node(&mut self, name: String, id: u32, media_type: Option<MediaType>) {
+        self.get_or_create_node(name).add_pw_node(id, media_type)
+    }
+    pub fn remove_node(&mut self, name: &str, id: u32) {
 
-        match &removed {
-            Some(node) => log::debug!("Removed node: {}", node.name()),
-            None => log::warn!("Node with id {} doesn't exist", id),
+        if let Some(node) = self.nodes.get_mut(name) {
+            node.remove_pw_node(id)
+        } else {
+            log::error!("Node with name: {} was not registered", name);
         }
-
-        removed
     }
-    #[allow(dead_code)]
-    pub fn get_node(&self, id: u32) -> Option<&Node> {
-        self.nodes.get(&id)
+    pub fn add_port(&mut self, node_name: String, node_id: u32, port: Port) {
+        self.get_or_create_node(node_name).add_port(node_id, port)
     }
-    pub fn get_node_mut(&mut self, id: u32) -> Option<&mut Node> {
-        self.nodes.get_mut(&id)
+    pub fn remove_port(&mut self, node_name: &str,node_id: u32, port_id: u32) {
+        if let Some(node) = self.nodes.get_mut(node_name) {
+            node.remove_port(node_id, port_id);
+        } else {
+            log::error!("Node with name: {} was not registered", node_name);
+        }
     }
     pub fn add_link(&mut self, link: Link) {
         log::debug!("{}->{}", link.from_port, link.to_port);
@@ -65,11 +75,11 @@ impl Graph {
         self.links.insert(link.id, link);
     }
     #[allow(dead_code)]
-    pub fn get_link(&self, id: u32) -> Option<&Link> {
+    fn get_link(&self, id: u32) -> Option<&Link> {
         self.links.get(&id)
     }
     #[allow(dead_code)]
-    pub fn get_link_mut(&mut self, id: u32) -> Option<&mut Link> {
+    fn get_link_mut(&mut self, id: u32) -> Option<&mut Link> {
         self.links.get_mut(&id)
     }
     pub fn remove_link(&mut self, id: u32) -> Option<Link> {

@@ -151,11 +151,11 @@ impl GraphUI {
                 name,
                 media_type,
             } => {
-                let node = Node::new(id, name, media_type);
 
-                self.graph.add_node(node);
+                self.graph.add_node(name, id, media_type);
             }
             PipewireMessage::PortAdded {
+                node_name,
                 node_id,
                 id,
                 name,
@@ -163,10 +163,7 @@ impl GraphUI {
             } => {
                 let port = Port::new(id, name, port_type);
 
-                self.graph
-                    .get_node_mut(node_id)
-                    .expect("Port with provided id doesn't exist")
-                    .add_port(port);
+                self.graph.add_port(node_name, port);
             }
 
             PipewireMessage::LinkAdded {
@@ -189,14 +186,11 @@ impl GraphUI {
             }
             PipewireMessage::LinkStateChanged { id: _, active: _ } => {}
 
-            PipewireMessage::NodeRemoved { id } => {
-                self.graph.remove_node(id);
+            PipewireMessage::NodeRemoved { name, id } => {
+                self.graph.remove_node(&name, id);
             }
-            PipewireMessage::PortRemoved { node_id, id } => {
-                self.graph
-                    .get_node_mut(node_id)
-                    .expect("Port with provided id doesn't exist")
-                    .remove_port(id);
+            PipewireMessage::PortRemoved { node_name, node_id, id } => {
+                self.graph.remove_port(&node_name, node_id, id);
             }
             PipewireMessage::LinkRemoved { id } => {
                 self.graph.remove_link(id);

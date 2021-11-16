@@ -20,6 +20,7 @@ pub enum PipewireMessage {
         media_type: Option<MediaType>,
     },
     PortAdded {
+        node_name: String,
         node_id: u32,
         id: u32,
         name: String,
@@ -38,9 +39,11 @@ pub enum PipewireMessage {
         active: bool,
     },
     NodeRemoved {
+        name: String,
         id: u32,
     },
     PortRemoved {
+        node_name: String,
         node_id: u32,
         id: u32,
     },
@@ -114,10 +117,10 @@ pub fn thread_main(
         .global_remove(move |id| match state_rm.borrow_mut().remove(id) {
             Some(object) => {
                 let message = match object {
-                    state::GlobalObject::Node => PipewireMessage::NodeRemoved { id },
+                    state::GlobalObject::Node {name} => PipewireMessage::NodeRemoved { name, id },
                     state::GlobalObject::Link => PipewireMessage::LinkRemoved { id },
-                    state::GlobalObject::Port { node_id, id } => {
-                        PipewireMessage::PortRemoved { node_id, id }
+                    state::GlobalObject::Port { node_name, node_id, id } => {
+                        PipewireMessage::PortRemoved { node_name, node_id, id }
                     }
                 };
                 sender_rm
@@ -186,7 +189,7 @@ fn handle_node(
         }
     });
 
-    state.borrow_mut().add(node.id, state::GlobalObject::Node);
+    state.borrow_mut().add(node.id, state::GlobalObject::Node {name: name.clone()});
 
     sender
         .send(PipewireMessage::NodeAdded {
@@ -292,6 +295,17 @@ fn handle_port(
         .expect("Port object doesn't have node.id property")
         .parse::<u32>()
         .expect("Couldn't parse node.id as u32");
+    
+    let mut state = state.borrow_mut();
+
+    let node_name = match state.get(node_id)
+    .expect(&format!("Node with id {} was never registered", node_id)) {
+        state::GlobalObject::Node { name } => name,
+        _=> {
+            unreachable!()
+        }
+    };
+    
 
     let port_type = match props.get("port.direction") {
         Some("in") => PortType::Input,
@@ -299,9 +313,10 @@ fn handle_port(
         _ => PortType::Unknown,
     };
 
-    state.borrow_mut().add(
+    state.add(
         port.id,
         state::GlobalObject::Port {
+            node_name: node_name.clone(),
             node_id,
             id: port.id,
         },
@@ -309,6 +324,7 @@ fn handle_port(
 
     sender
         .send(PipewireMessage::PortAdded {
+            node_name: node_name.clone(),
             node_id,
             id: port.id,
             name,
